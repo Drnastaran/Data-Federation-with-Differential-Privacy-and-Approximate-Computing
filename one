@@ -1,0 +1,264 @@
+import numpy as np
+import pandas as pd
+import time
+import matplotlib.pyplot as plt
+import tracemalloc
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, precision_score, recall_score
+
+# ---------------- User Configurable Settings ----------------
+# Differential Privacy Settings
+DEFAULT_EPSILON_VALUES = [0.1, 0.5, 1.0, 5.0, 10.0]  # Different epsilon values
+DEFAULT_SENSITIVITY_MEAN = 1.0  # Default sensitivity for mean
+DEFAULT_SENSITIVITY_SUM = 1.0  # Default sensitivity for sum
+
+# Federated Learning Settings
+FEATURE_COLUMNS = ['age', 'balance', 'duration', 'campaign', 'previous']
+TARGET_COLUMN = 'term_deposit'
+TRAINING_SPLIT_RATIO = 0.8  # Ratio of training data to total data
+
+# Processing Settings
+USE_MULTITHREADING = False  # Use parallel processing for speed-up (True/False)
+SHOW_PLOTS = True  # Display plots (True/False)
+
+# ---------------- End of User Configurable Settings ----------------
+
+# Define class for Blockchain Nodes
+class Node:
+    def __init__(self, node_type, node_id):
+        self.node_type = node_type
+        self.node_id = node_id
+        self.blockchain = []
+        self.data_storage = {}
+
+    def process_transaction(self, transaction):
+        if self.node_type == 'validator':
+            self.blockchain.append(transaction)
+        elif self.node_type == 'storage':
+            self.data_storage[transaction['key']] = transaction['value']
+        elif self.node_type == 'compute':
+            return f"Transaction processed by compute node {self.node_id}"
+
+class BlockchainNetwork:
+    def __init__(self):
+        self.nodes = {}
+
+    def add_node(self, node):
+        self.nodes[node.node_id] = node
+
+    def distribute_transaction(self, transaction):
+        for node in self.nodes.values():
+            node.process_transaction(transaction)
+
+# Federated Learning Class
+class FederatedLearning:
+    def __init__(self, nodes):
+        self.nodes = nodes
+
+    def train_model_locally(self, X, y):
+        model = LinearRegression()
+        model.fit(X, y)
+        return model
+
+    def aggregate_models(self, models):
+        weights = [1 / len(models)] * len(models)
+        avg_coef = np.average([model.coef_ for model in models], axis=0, weights=weights)
+        avg_intercept = np.average([model.intercept_ for model in models], weights=weights)
+        central_model = LinearRegression()
+        central_model.coef_ = avg_coef
+        central_model.intercept_ = avg_intercept
+        return central_model
+
+# Smart Contract for Access Control
+class SmartContract:
+    def __init__(self, owner):
+        self.owner = owner
+        self.permissions = {}
+
+    def set_permission(self, node_id, level):
+        self.permissions[node_id] = level
+
+    def get_permission(self, node_id):
+        return self.permissions.get(node_id, 0)
+
+    def execute(self, transaction, node):
+        if self.get_permission(node.node_id) > 0:
+            node.process_transaction(transaction)
+        else:
+            return f"Access denied for node {node.node_id}"
+
+# Laplace Mechanism for Differential Privacy
+def laplace_mechanism(value, sensitivity, epsilon):
+    """
+    Laplace mechanism to ensure differential privacy.
+    According to Equation 2:
+    (Δf/ε)LAP + f(x) = M(x)
+    """
+    scale = sensitivity / epsilon
+    noise = np.random.laplace(0, scale)
+    return value + noise
+
+# Queries and Sensitivities
+def query_mean(data):
+    return np.mean(data)
+
+def query_sum(data):
+    return np.sum(data)
+
+def sensitivity_mean(data):
+    """
+    Δf (sensitivity) for mean is the maximum possible change in the output f
+    caused by changing a single record.
+    """
+    return (np.max(data) - np.min(data)) / len(data)
+
+def sensitivity_sum(data):
+    """
+    Δf (sensitivity) for sum is the maximum possible change in the output f
+    caused by changing a single record.
+    """
+    return np.max(data) - np.min(data)
+
+# Differential Privacy Implementation for Mean and Sum
+def differential_privacy_mean(data, epsilon):
+    """
+    According to the definition of Differential Privacy (Equation 1):
+    Pr[K(D)∈S] ≤ exp(ϵ) × Pr[K(D')∈S]
+    """
+    sensitivity_value = sensitivity_mean(data)
+    true_result = query_mean(data)
+    noisy_result = laplace_mechanism(true_result, sensitivity_value, epsilon)
+    return true_result, noisy_result
+
+def differential_privacy_sum(data, epsilon):
+    sensitivity_value = sensitivity_sum(data)
+    true_result = query_sum(data)
+    noisy_result = laplace_mechanism(true_result, sensitivity_value, epsilon)
+    return true_result, noisy_result
+
+# Load Data (Assuming actual file 'BankCustomerData.csv' exists)
+df = pd.read_csv('BankCustomerData.csv')
+X = df[FEATURE_COLUMNS].values
+y = df[TARGET_COLUMN].apply(lambda x: 1 if x == 'yes' else 0).values
+
+# Blockchain and Federated Learning Execution
+blockchain_network = BlockchainNetwork()
+node1 = Node('validator', 1)
+node2 = Node('storage', 2)
+node3 = Node('compute', 3)
+
+blockchain_network.add_node(node1)
+blockchain_network.add_node(node2)
+blockchain_network.add_node(node3)
+
+# Train Local Models
+federated = FederatedLearning([node1, node2, node3])
+local_model1 = federated.train_model_locally(X, y)
+local_model2 = federated.train_model_locally(X, y)
+
+# Aggregate Models
+central_model = federated.aggregate_models([local_model1, local_model2])
+
+# Epsilon Values and Metrics Calculation
+epsilon_values = DEFAULT_EPSILON_VALUES
+mean_errors = []
+sum_errors = []
+accuracies = []
+precisions = []
+recalls = []
+processing_times = []
+memory_usages = []
+privacy_losses = []
+entropies = []
+
+# Measure Performance
+def measure_performance(function, *args):
+    tracemalloc.start()
+    start_time = time.time()
+    result = function(*args)
+    processing_time = time.time() - start_time
+    memory_used = tracemalloc.get_traced_memory()[1] / (1024 * 1024)  # Convert to MB
+    tracemalloc.stop()
+    return result, processing_time, memory_used
+
+# Entropy Calculation
+def calculate_entropy(data):
+    value, counts = np.unique(data, return_counts=True)
+    return -np.sum((counts/len(data)) * np.log2(counts/len(data)))
+
+# Main Loop for Metrics Calculation
+for epsilon in epsilon_values:
+    # Mean
+    (mean_true, mean_noisy), mean_time, mean_memory = measure_performance(differential_privacy_mean, y, epsilon)
+    mean_errors.append(abs(mean_true - mean_noisy) / mean_true)
+    
+    # Sum
+    (sum_true, sum_noisy), sum_time, sum_memory = measure_performance(differential_privacy_sum, y, epsilon)
+    sum_errors.append(abs(sum_true - sum_noisy) / sum_true)
+    
+    # Prediction and Accuracy Metrics
+    predictions = central_model.predict(X)
+    noisy_predictions = np.array([laplace_mechanism(pred, sensitivity_mean(predictions), epsilon) for pred in predictions])
+    original_mae = mean_absolute_error(predictions, y)
+    noisy_mae = mean_absolute_error(noisy_predictions, y)
+    accuracy = ((original_mae - noisy_mae) / original_mae) if original_mae != 0 else 0
+    accuracies.append(accuracy)
+
+    # Precision and Recall
+    binary_predictions = [1 if p > 0.5 else 0 for p in predictions]
+    precisions.append(precision_score(y, binary_predictions))
+    recalls.append(recall_score(y, binary_predictions))
+    
+    # Processing Time and Memory Usage
+    processing_times.append(mean_time + sum_time)
+    memory_usages.append(mean_memory + sum_memory)
+
+    # Privacy Loss and Entropy
+    privacy_losses.append(1 - accuracy)
+    entropies.append(calculate_entropy(noisy_predictions))
+
+# Plot Related Graphs in a Single Figure
+if SHOW_PLOTS:
+    plt.figure(figsize=(14, 12))
+
+    # 1. Mean Error and Sum Error
+    plt.subplot(2, 2, 1)
+    plt.plot(epsilon_values, mean_errors, marker='o', label='Mean Error', color='b')
+    plt.plot(epsilon_values, sum_errors, marker='s', label='Sum Error', color='g')
+    plt.xlabel('Epsilon', fontsize=14)
+    plt.ylabel('Relative Error', fontsize=14)
+    plt.title('Mean Error & Sum Error vs Epsilon', fontsize=16)
+    plt.legend()
+    plt.grid(True)
+
+    # 2. Accuracy, Precision, and Recall
+    plt.subplot(2, 2, 2)
+    plt.plot(epsilon_values, accuracies, marker='^', label='Accuracy', color='r')
+    plt.plot(epsilon_values, precisions, marker='D', label='Precision', color='m')
+    plt.plot(epsilon_values, recalls, marker='x', label='Recall', color='c')
+    plt.xlabel('Epsilon', fontsize=14)
+    plt.ylabel('Score', fontsize=14)
+    plt.title('Accuracy, Precision, Recall vs Epsilon', fontsize=16)
+    plt.legend()
+    plt.grid(True)
+
+    # 3. Processing Time and Memory Usage
+    plt.subplot(2, 2, 3)
+    plt.plot(epsilon_values, processing_times, marker='*', label='Processing Time (s)', color='y')
+    plt.xlabel('Epsilon', fontsize=14)
+    plt.ylabel('Processing Time (s)', fontsize=14)
+    plt.title('Processing Time vs Epsilon', fontsize=16)
+    plt.grid(True)
+
+    # 4. Privacy Loss and Entropy
+    plt.subplot(2, 2, 4)
+    plt.plot(epsilon_values, privacy_losses, marker='o', label='Privacy Loss', color='b')
+    plt.plot(epsilon_values, entropies, marker='s', label='Entropy', color='g')
+    plt.xlabel('Epsilon', fontsize=14)
+    plt.ylabel('Privacy Loss / Entropy', fontsize=14)
+    plt.title('Privacy Loss & Entropy vs Epsilon', fontsize=16)
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
